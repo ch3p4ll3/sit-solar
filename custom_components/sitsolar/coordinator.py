@@ -29,6 +29,7 @@ class SitSolarCoordinator(DataUpdateCoordinator[dict]):
         self.api = api
 
     async def _async_update_data(self) -> dict:
+        _LOGGER.debug("Sit Solar cloud poll started")
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
         session = async_get_clientsession(self.hass)
         # Login if needed
@@ -74,6 +75,17 @@ class SitSolarCoordinator(DataUpdateCoordinator[dict]):
             else:
                 entry["battery"] = {}
             result[str(dev_id)] = entry
+            monitor = entry.get("monitor", {}) if isinstance(entry.get("monitor"), dict) else {}
+            mi = monitor.get("monitorInformation", {}) if isinstance(monitor.get("monitorInformation"), dict) else {}
+            _LOGGER.debug(
+                "Device %s (%s) status=%s active_power=%s pv_total_power=%s update_time=%s",
+                dev_id,
+                dev.get("devName"),
+                mi.get("devStatus"),
+                mi.get("active_power"),
+                mi.get("pv_total_power"),
+                mi.get("update_time"),
+            )
 
         # Station-level overview / energy flow (home screen data, monotonic totals)
         stations: dict[str, str] = {}
@@ -106,5 +118,18 @@ class SitSolarCoordinator(DataUpdateCoordinator[dict]):
                 "station_flow": flow or {},
             }
             result[f"station:{code}"] = entry
+            ov = entry.get("overview", {}) if isinstance(entry.get("overview"), dict) else {}
+            flow = entry.get("station_flow", {}) if isinstance(entry.get("station_flow"), dict) else {}
+            _LOGGER.debug(
+                "Station %s active=%s solar_total=%s update_time=%s mppt=%s solar_power=%s",
+                code,
+                ov.get("activePower"),
+                ov.get("totalGfProductPower"),
+                ov.get("updateTime"),
+                flow.get("mpptPower"),
+                None if flow.get("mpptPower") is None else float(flow.get("mpptPower") or 0)
+                + float(flow.get("acCoupleGfActivePower") or 0),
+            )
 
+        _LOGGER.debug("Sit Solar poll finished: %d entries", len(result))
         return result
