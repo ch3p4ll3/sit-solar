@@ -60,8 +60,8 @@ ELECTRIC_SENSORS = [
 ]
 
 STATION_ENERGY_SENSORS = [
-    ("total_solar_production", ["totalProductPower"], "Solar production total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
-    ("total_pv_power", ["totalGfProductPower"], "PV production (all strings) total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_solar_production", ["totalGfProductPower"], "Solar production total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_product_power", ["totalProductPower"], "Product power total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
     ("total_grid_import", ["totalBuyGridPower"], "Grid import total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
     ("total_grid_export", ["totalOngridPower"], "Grid export total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
     ("total_battery_charge", ["totalCellCharge"], "Battery charge total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
@@ -106,12 +106,14 @@ class SitSolarSensor(CoordinatorEntity, SensorEntity):
         device_class,
         state_class,
         source: str,
+        value_fn=None,
     ) -> None:
         super().__init__(coordinator)
         self._dev_id = dev_id
         self._key = key
         self._path = path
         self._source = source
+        self._value_fn = value_fn
         device = coordinator.data[dev_id]["device"]
         dev_name = device.get("devName") or device.get("snCode") or dev_id
         self._attr_name = f"{dev_name} {name_suffix}"
@@ -127,6 +129,11 @@ class SitSolarSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         data = self._current
+        if self._value_fn is not None:
+            try:
+                return self._value_fn(data)
+            except (TypeError, ValueError, KeyError):
+                return None
         src = data.get(self._source, {}) or {}
         val = _get_nested(src, self._path)
         if isinstance(val, (int, float, str)):
@@ -185,6 +192,34 @@ async def async_setup_entry(
                             coordinator, dev_id, key, suffix, path, unit, dclass, sc, "station_flow"
                         )
                     )
+            # App home shows solar power as mpptPower + acCouple when AC-coupling is enabled
+            def _combined_solar(state):
+                flow = (state or {}).get("station_flow", {}) or {}
+                def _num(key):
+                    v = flow.get(key)
+                    try:
+                        return float(v) if v is not None else 0.0
+                    except (TypeError, ValueError):
+                        return 0.0
+                mppt = flow.get("mpptPower")
+                ac = flow.get("acCoupleGfActivePower")
+                if mppt is None and ac is None:
+                    return None
+                return _num("mpptPower") + _num("acCoupleGfActivePower")
+            entities.append(
+                SitSolarSensor(
+                    coordinator,
+                    dev_id,
+                    "solar_power",
+                    "Solar power",
+                    [],
+                    UnitOfPower.KILO_WATT,
+                    SensorDeviceClass.POWER,
+                    SensorStateClass.MEASUREMENT,
+                    "station_flow",
+                    value_fn=_combined_solar,
+                )
+            )
             continue
 
         # monitor sensors (if monitor data present)
