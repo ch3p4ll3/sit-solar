@@ -74,4 +74,37 @@ class SitSolarCoordinator(DataUpdateCoordinator[dict]):
             else:
                 entry["battery"] = {}
             result[str(dev_id)] = entry
+
+        # Station-level overview / energy flow (home screen data, monotonic totals)
+        stations: dict[str, str] = {}
+        for dev in devices:
+            code = dev.get("stationCode")
+            if code:
+                stations[code] = dev.get("stationName") or code
+
+        for code, name in stations.items():
+            try:
+                overview = await self.api.async_get_station_overview(session, code)
+            except SitSolarApiError:
+                overview = None
+            try:
+                flow = await self.api.async_get_station_flow(session, code)
+            except SitSolarApiError:
+                flow = None
+            entry = {
+                "kind": "station",
+                "station_code": code,
+                "device": {
+                    "devId": f"station:{code}",
+                    "devName": name,
+                    "devModel": "Station",
+                    "stationCode": code,
+                    "neVersion": None,
+                    "devTypeId": None,
+                },
+                "overview": overview or {},
+                "station_flow": flow or {},
+            }
+            result[f"station:{code}"] = entry
+
         return result

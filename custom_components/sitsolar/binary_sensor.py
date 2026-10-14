@@ -55,5 +55,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: SitSolarCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [SitSolarOnlineSensor(coordinator, dev_id) for dev_id in coordinator.data]
+    entities = [
+        SitSolarOnlineSensor(coordinator, dev_id)
+        for dev_id in coordinator.data
+        if not str(dev_id).startswith("station:")
+    ]
     async_add_entities(entities)

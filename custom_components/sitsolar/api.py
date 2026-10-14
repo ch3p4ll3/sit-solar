@@ -1,9 +1,12 @@
 """API client for Sit Solar (SiNeng enjoysolar)."""
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import aiohttp
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from .const import DEFAULT_HOST
 
@@ -22,6 +25,7 @@ class SitSolarApi:
         self.username = username
         self.password = password
         self._token: str | None = None
+        self._aes_key: str | None = None
 
     @property
     def base_url(self) -> str:
@@ -67,10 +71,43 @@ class SitSolarApi:
             raise SitSolarApiError(msg or f"API error {code}")
         return data
 
+    async def _get_aes_key(self, session: aiohttp.ClientSession) -> str:
+        if self._aes_key:
+            return self._aes_key
+        data = await self._request(session, "GET", "/auth/aesKey", _retry=False)
+        raw = data.get("data")
+        if not isinstance(raw, str):
+            raise SitSolarAuthError("aes key missing")
+        self._aes_key = base64.b64decode(raw).decode("utf-8")
+        return self._aes_key
+
+    @staticmethod
+    def _encrypt_password(password: str, key: str) -> str:
+        key_bytes = key.encode("utf-8")
+        padder = padding.PKCS7(128).padder()
+        padded = padder.update(password.encode("utf-8")) + padder.finalize()
+        cipher = Cipher(algorithms.AES(key_bytes), modes.ECB())
+        encryptor = cipher.encryptor()
+        ct = encryptor.update(padded) + encryptor.finalize()
+        return base64.b64encode(ct).decode("ascii")
+
     async def async_login(self, session: aiohttp.ClientSession) -> str:
+        if not self.password:
+            data = await self._request(
+                session, "POST", "/auth/loginExperience",
+                json={"isApp": True}, _retry=False
+            )
+            token = data.get("data")
+            if not isinstance(token, str) or not token:
+                raise SitSolarAuthError("login experience did not return token")
+            self._token = token
+            return token
+
+        aes_key = await self._get_aes_key(session)
+        encrypted = self._encrypt_password(self.password, aes_key)
         payload = {
             "username": self.username,
-            "password": self.password,
+            "password": encrypted,
             "loginType": 2,
             "app": True,
         }
@@ -109,6 +146,34 @@ class SitSolarApi:
             data = await self._request(
                 session, "GET",
                 f"/dev/info/devmonitor/getStoredInverterBatteryMonitor/{dev_id}",
+            )
+        except SitSolarApiError:
+            return None
+        return data.get("data") or None
+
+    async def async_get_station_overview(
+        self, session: aiohttp.ClientSession, station_code: str
+    ) -> dict | None:
+        try:
+            data = await self._request(
+                session,
+                "GET",
+                "/business/app/v1/single/overview/appSingleStationOverviewData",
+                params={"stationCode": station_code},
+            )
+        except SitSolarApiError:
+            return None
+        return data.get("data") or None
+
+    async def async_get_station_flow(
+        self, session: aiohttp.ClientSession, station_code: str
+    ) -> dict | None:
+        try:
+            data = await self._request(
+                session,
+                "GET",
+                "/business/single/overview/stationEnergyFlowDiagram",
+                params={"stationCode": station_code},
             )
         except SitSolarApiError:
             return None

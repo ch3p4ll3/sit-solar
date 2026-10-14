@@ -59,6 +59,31 @@ ELECTRIC_SENSORS = [
     ("daily_consumption", ["electricInformation", "day_electricity_consumption"], "Daily consumption", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
 ]
 
+STATION_ENERGY_SENSORS = [
+    ("total_solar_production", ["totalProductPower"], "Solar production total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_pv_power", ["totalGfProductPower"], "PV production (all strings) total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_grid_import", ["totalBuyGridPower"], "Grid import total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_grid_export", ["totalOngridPower"], "Grid export total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_battery_charge", ["totalCellCharge"], "Battery charge total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_battery_discharge", ["totalCellDischarge"], "Battery discharge total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_house_load", ["totalLoadUsePower"], "House load total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_load_use_pv", ["totalLoadUsePvPower"], "Load from PV total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_load_use_battery", ["totalLoadUseBatteryPower"], "Load from battery total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_load_use_grid", ["totalLoadUseGridPower"], "Load from grid total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_pv_to_grid", ["totalPvToGridProductPower"], "PV to grid total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    ("total_pv_to_battery", ["totalPvToBatteryProductPower"], "PV to battery total", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+]
+
+STATION_POWER_SENSORS = [
+    ("station_active_power", ["activePower"], "Station active power", UnitOfPower.KILO_WATT, SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    ("station_ongrid_power", ["ongridPower"], "Grid export power", UnitOfPower.KILO_WATT, SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    ("station_buy_power", ["buyPower"], "Grid import power", UnitOfPower.KILO_WATT, SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    ("station_load_power", ["loadPower"], "House load power", UnitOfPower.KILO_WATT, SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    ("station_mppt_power", ["mpptPower"], "PV power", UnitOfPower.KILO_WATT, SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    ("station_battery_power", ["batteryPower"], "Battery power", UnitOfPower.KILO_WATT, SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    ("station_battery_soc_avg", ["batterySocAver"], "Battery SOC average", PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT),
+]
+
 
 def _get_nested(obj: dict, path: list[str]) -> Any:
     cur = obj
@@ -141,6 +166,26 @@ async def async_setup_entry(
         monitor = data.get("monitor", {}) or {}
         battery = data.get("battery", {}) or {}
         electric = monitor.get("electricInformation", {}) if isinstance(monitor, dict) else {}
+
+        # Station-level home screen data (totals + power flow)
+        if str(dev_id).startswith("station:"):
+            overview = data.get("overview", {}) or {}
+            flow = data.get("station_flow", {}) or {}
+            for key, path, suffix, unit, dclass, sc in STATION_ENERGY_SENSORS:
+                if _get_nested(overview, path) is not None:
+                    entities.append(
+                        SitSolarSensor(
+                            coordinator, dev_id, key, suffix, path, unit, dclass, sc, "overview"
+                        )
+                    )
+            for key, path, suffix, unit, dclass, sc in STATION_POWER_SENSORS:
+                if _get_nested(flow, path) is not None:
+                    entities.append(
+                        SitSolarSensor(
+                            coordinator, dev_id, key, suffix, path, unit, dclass, sc, "station_flow"
+                        )
+                    )
+            continue
 
         # monitor sensors (if monitor data present)
         for key, path, suffix, unit, dclass, sc in MONITOR_SENSORS:
