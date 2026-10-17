@@ -309,7 +309,7 @@ The script:
 
 ## Limitations
 
-- Cloud polling only (no push or local protocol reverse-engineered). The minimum scan interval is 60 seconds.
+- Cloud polling only. The minimum scan interval is 60 seconds.
 - Read-only: controls (work modes, setpoints) are not exposed as Home Assistant services.
 - **TLS certificate verification is currently disabled** for requests to the cloud, including the login request (`ssl=False` in `api.py`).
 - Energy sensors model the cumulative API totals as `TOTAL_INCREASING`.
